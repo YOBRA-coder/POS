@@ -1,0 +1,15 @@
+// Barcode encoder: EAN-13 / UPC-A / EAN-8 / Code 39 -> {mods:'1010...',text,type}. Works in browser and Node.
+(function(g){
+const L=['0001101','0011001','0010011','0111101','0100011','0110001','0101111','0111011','0110111','0001011'],
+G=['0100111','0110011','0011011','0100001','0011101','0111001','0000101','0010001','0001001','0010111'],
+Rr=L.map(x=>x.replace(/[01]/g,c=>c=='0'?'1':'0')),
+PAR=['LLLLLL','LLGLGG','LLGGLG','LLGGGL','LGLLGG','LGGLLG','LGGGLL','LGLGLG','LGLGGL','LGGLGL'],
+C39={'0':'nnnwwnwnn','1':'wnnwnnnnw','2':'nnwwnnnnw','3':'wnwwnnnnn','4':'nnnwwnnnw','5':'wnnwwnnnn','6':'nnwwwnnnn','7':'nnnwnnwnw','8':'wnnwnnwnn','9':'nnwwnnwnn','A':'wnnnnwnnw','B':'nnwnnwnnw','C':'wnwnnwnnn','D':'nnnnwwnnw','E':'wnnnwwnnn','F':'nnwnwwnnn','G':'nnnnnwwnw','H':'wnnnnwwnn','I':'nnwnnwwnn','J':'nnnnwwwnn','K':'wnnnnnnww','L':'nnwnnnnww','M':'wnwnnnnwn','N':'nnnnwnnww','O':'wnnnwnnwn','P':'nnwnwnnwn','Q':'nnnnnnwww','R':'wnnnnnwwn','S':'nnwnnnwwn','T':'nnnnwnwwn','U':'wwnnnnnnw','V':'nwwnnnnnw','W':'wwwnnnnnn','X':'nwnnwnnnw','Y':'wwnnwnnnn','Z':'nwwnwnnnn','-':'nwnnnnwnw','.':'wwnnnnwnn',' ':'nwwnnnwnn','$':'nwnwnwnnn','/':'nwnwnnnwn','+':'nwnnnwnwn','%':'nnnwnwnwn','*':'nwnnwnwnn'};
+const chk=d=>{let s=0;for(let i=0;i<d.length;i++)s+=(+d[i])*((d.length-i)%2?3:1);return (10-s%10)%10};
+function ean13(c){if(chk(c.slice(0,12))!=+c[12])throw Error('Bad EAN-13 check digit');const p=PAR[+c[0]];let m='101';for(let i=0;i<6;i++)m+=(p[i]=='L'?L:G)[+c[i+1]];m+='01010';for(let i=7;i<13;i++)m+=Rr[+c[i]];return m+'101'}
+function ean8(c){if(chk(c.slice(0,7))!=+c[7])throw Error('Bad EAN-8 check digit');let m='101';for(let i=0;i<4;i++)m+=L[+c[i]];m+='01010';for(let i=4;i<8;i++)m+=Rr[+c[i]];return m+'101'}
+function code39(t){t=String(t).toUpperCase();let m='';for(const ch of '*'+t+'*'){const p=C39[ch];if(!p)throw Error('Unsupported character '+ch);for(let i=0;i<9;i++){const w=p[i]=='w'?3:1;m+=(i%2?'0':'1').repeat(w)}m+='0'}return m.slice(0,-1)}
+g.Barcode={chk,encode(code){code=String(code).trim();if(/^\d{13}$/.test(code)&&chk(code.slice(0,12))==+code[12])return{type:'EAN-13',mods:ean13(code),text:code};if(/^\d{12}$/.test(code)&&chk(code.slice(0,11))==+code[11])return{type:'UPC-A',mods:ean13('0'+code),text:code};if(/^\d{8}$/.test(code)&&chk(code.slice(0,7))==+code[7])return{type:'EAN-8',mods:ean8(code),text:code};return{type:'Code 39',mods:code39(code),text:code}},
+ svg(code,h=46){const b=this.encode(code),q=10,w=(b.mods.length+q*2);let r='';for(let i=0,x=0;i<b.mods.length;i++){if(b.mods[i]=='1'){let j=i;while(b.mods[j+1]=='1')j++;r+=`<rect x="${i+q}" y="0" width="${j-i+1}" height="${h}"/>`;i=j}}return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h+12}" width="100%" preserveAspectRatio="xMidYMid meet"><rect width="${w}" height="${h+12}" fill="#fff"/><g fill="#000">${r}</g><text x="${w/2}" y="${h+10}" font-size="9" text-anchor="middle" font-family="monospace" fill="#000">${b.text}</text></svg>`}};
+if(typeof module!='undefined')module.exports=g.Barcode;
+})(typeof window!='undefined'?window:globalThis);

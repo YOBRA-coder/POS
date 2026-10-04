@@ -1,0 +1,84 @@
+// SQLite schema, seed data and small helpers. Stock is an append-only ledger in ml.
+const Database=require('better-sqlite3'),crypto=require('crypto');
+const db=new Database(process.env.DB||'pos.db');
+db.pragma('journal_mode=WAL');db.pragma('foreign_keys=ON');
+db.exec(`
+CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY,v TEXT);
+CREATE TABLE IF NOT EXISTS branches(id INTEGER PRIMARY KEY,name TEXT);
+CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,name TEXT,role TEXT,pin_hash TEXT,salt TEXT,active INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id INT,ts INT);
+CREATE TABLE IF NOT EXISTS products(id INTEGER PRIMARY KEY,name TEXT,category TEXT,bottle_ml INT,cost REAL,reorder_ml INT DEFAULT 0,active INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS units(id INTEGER PRIMARY KEY,product_id INT,label TEXT,ml INT,price REAL);
+CREATE TABLE IF NOT EXISTS barcodes(code TEXT PRIMARY KEY,unit_id INT,multiplier INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS ledger(id INTEGER PRIMARY KEY,ts INT,branch_id INT DEFAULT 1,product_id INT,ml INT,type TEXT,ref TEXT,note TEXT,user_id INT);
+CREATE INDEX IF NOT EXISTS ix_ledger_p ON ledger(product_id);
+CREATE TABLE IF NOT EXISTS purchases(id INTEGER PRIMARY KEY,ts INT,supplier TEXT,invoice TEXT,product_id INT,cases INT,per_case INT,case_cost REAL,user_id INT);
+CREATE TABLE IF NOT EXISTS shifts(id INTEGER PRIMARY KEY,user_id INT,branch_id INT DEFAULT 1,open_ts INT,open_cash REAL,close_ts INT,counted REAL,expected REAL,variance REAL);
+CREATE TABLE IF NOT EXISTS cash_moves(id INTEGER PRIMARY KEY,shift_id INT,ts INT,type TEXT,amount REAL,note TEXT,user_id INT);
+CREATE TABLE IF NOT EXISTS sales(id INTEGER PRIMARY KEY,no TEXT UNIQUE,idem TEXT UNIQUE,ts INT,branch_id INT DEFAULT 1,shift_id INT,user_id INT,subtotal REAL,discount REAL,total REAL,vat REAL,cogs REAL,status TEXT DEFAULT 'completed',customer TEXT,approved_by INT,refunded_ts INT,refund_reason TEXT);
+CREATE TABLE IF NOT EXISTS sale_items(id INTEGER PRIMARY KEY,sale_id INT,product_id INT,unit_id INT,name TEXT,label TEXT,ml INT,qty INT,price REAL,cost REAL);
+CREATE TABLE IF NOT EXISTS payments(id INTEGER PRIMARY KEY,sale_id INT,method TEXT,amount REAL,ref TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_mpesa_ref ON payments(ref) WHERE method='mpesa';
+CREATE TABLE IF NOT EXISTS mpesa_requests(id INTEGER PRIMARY KEY,checkout_id TEXT UNIQUE,phone TEXT,amount REAL,status TEXT,receipt TEXT UNIQUE,result TEXT,ts INT,user_id INT);
+CREATE TABLE IF NOT EXISTS fiscal_docs(id INTEGER PRIMARY KEY,sale_id INT,kind TEXT,status TEXT,attempts INT DEFAULT 0,response TEXT,fiscal_no TEXT,error TEXT,ts INT,UNIQUE(sale_id,kind));
+CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY,ts INT,user_id INT,action TEXT,entity TEXT,entity_id TEXT,old TEXT,new TEXT,reason TEXT);
+CREATE TRIGGER IF NOT EXISTS t_ledger_u BEFORE UPDATE ON ledger BEGIN SELECT RAISE(ABORT,'ledger is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS t_ledger_d BEFORE DELETE ON ledger BEGIN SELECT RAISE(ABORT,'ledger is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS t_audit_u BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS t_audit_d BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT,'audit is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS t_sales_d BEFORE DELETE ON sales BEGIN SELECT RAISE(ABORT,'sales cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS t_pay_d BEFORE DELETE ON payments BEGIN SELECT RAISE(ABORT,'payments cannot be deleted'); END;
+CREATE TABLE IF NOT EXISTS customers(id INTEGER PRIMARY KEY,name TEXT,phone TEXT,type TEXT DEFAULT 'retail',credit_limit REAL DEFAULT 0,active INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS customer_payments(id INTEGER PRIMARY KEY,customer_id INT,ts INT,amount REAL,method TEXT,ref TEXT,user_id INT);
+CREATE TABLE IF NOT EXISTS suppliers(id INTEGER PRIMARY KEY,name TEXT,phone TEXT,kra_pin TEXT,terms_days INT DEFAULT 0,active INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS purchase_orders(id INTEGER PRIMARY KEY,no TEXT,supplier_id INT,status TEXT DEFAULT 'draft',ts INT,user_id INT);
+CREATE TABLE IF NOT EXISTS po_items(id INTEGER PRIMARY KEY,po_id INT,product_id INT,cases INT,per_case INT,case_cost REAL,received INT DEFAULT 0);
+CREATE TABLE IF NOT EXISTS supplier_invoices(id INTEGER PRIMARY KEY,supplier_id INT,po_id INT,invoice TEXT,amount REAL,paid REAL DEFAULT 0,ts INT,due_ts INT);
+CREATE TABLE IF NOT EXISTS supplier_payments(id INTEGER PRIMARY KEY,invoice_id INT,ts INT,amount REAL,method TEXT,ref TEXT,user_id INT);
+CREATE TABLE IF NOT EXISTS unit_prices(unit_id INT,tier TEXT,price REAL,PRIMARY KEY(unit_id,tier));
+CREATE TABLE IF NOT EXISTS promos(id INTEGER PRIMARY KEY,name TEXT,percent REAL,product_id INT,start_h INT,end_h INT,days TEXT,active INT DEFAULT 1);
+CREATE TABLE IF NOT EXISTS returns(id INTEGER PRIMARY KEY,sale_id INT,ts INT,user_id INT,reason TEXT,amount REAL,cogs REAL,cash_part REAL DEFAULT 0,credit_part REAL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS return_items(return_id INT,sale_item_id INT,qty INT);
+CREATE TABLE IF NOT EXISTS transfers(id INTEGER PRIMARY KEY,no TEXT,from_branch INT,to_branch INT,status TEXT DEFAULT 'requested',ts INT,user_id INT,note TEXT,dispatched_ts INT,received_ts INT);
+CREATE TABLE IF NOT EXISTS transfer_items(id INTEGER PRIMARY KEY,transfer_id INT,product_id INT,bottles REAL,received REAL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY,no TEXT UNIQUE,branch_id INT DEFAULT 1,customer_id INT,name TEXT,phone TEXT,address TEXT,channel TEXT,notes TEXT,fee REAL DEFAULT 0,status TEXT DEFAULT 'new',driver TEXT,sale_id INT,ts INT,user_id INT,delivered_ts INT);
+CREATE TABLE IF NOT EXISTS order_items(id INTEGER PRIMARY KEY,order_id INT,unit_id INT,qty INT);
+CREATE TABLE IF NOT EXISTS sms_log(id INTEGER PRIMARY KEY,ts INT,phone TEXT,text TEXT,status TEXT,attempts INT DEFAULT 0,error TEXT,order_id INT,kind TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_sms_once ON sms_log(order_id,kind) WHERE order_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS product_images(id INTEGER PRIMARY KEY,product_id INT,url TEXT,provider TEXT DEFAULT 'local',public_id TEXT,sort INT DEFAULT 0,ts INT);
+CREATE INDEX IF NOT EXISTS ix_pimg ON product_images(product_id);
+CREATE TRIGGER IF NOT EXISTS t_cp_d BEFORE DELETE ON customer_payments BEGIN SELECT RAISE(ABORT,'payments cannot be deleted'); END;
+CREATE TRIGGER IF NOT EXISTS t_sp_d BEFORE DELETE ON supplier_payments BEGIN SELECT RAISE(ABORT,'payments cannot be deleted'); END;
+`);
+const hash=(pin,salt)=>crypto.scryptSync(String(pin),salt,32).toString('hex');
+const mkUser=(name,role,pin)=>{const s=crypto.randomBytes(8).toString('hex');return db.prepare('INSERT INTO users(name,role,pin_hash,salt) VALUES(?,?,?,?)').run(name,role,hash(pin,s),s).lastInsertRowid};
+const setting=(k,d)=>{const r=db.prepare('SELECT v FROM settings WHERE k=?').get(k);return r?r.v:d};
+const setSetting=(k,v)=>db.prepare('INSERT OR REPLACE INTO settings VALUES(?,?)').run(k,String(v));
+const audit=(uid,action,entity,eid,o,n,reason)=>db.prepare('INSERT INTO audit(ts,user_id,action,entity,entity_id,old,new,reason) VALUES(?,?,?,?,?,?,?,?)').run(Date.now(),uid,action,entity,String(eid??''),o==null?null:JSON.stringify(o),n==null?null:JSON.stringify(n),reason||null);
+// stock(pid) = all branches; stock(pid,branchId) = one branch
+const stock=(pid,br)=>db.prepare('SELECT COALESCE(SUM(ml),0) s FROM ledger WHERE product_id=?'+(br==null?'':' AND branch_id='+(+br))).get(pid).s;
+const ledger=(pid,ml,type,ref,note,uid,ts=Date.now(),br=1)=>db.prepare('INSERT INTO ledger(ts,product_id,ml,type,ref,note,user_id,branch_id) VALUES(?,?,?,?,?,?,?,?)').run(ts,pid,ml,type,ref||null,note||null,uid,br);
+if(!db.prepare('SELECT 1 FROM users').get()){
+ db.prepare("INSERT INTO branches(name) VALUES('Main shop')").run();
+ const o=mkUser('Owner','owner','1234');mkUser('Manager','manager','2222');mkUser('Cashier','cashier','1111');
+ const P=(n,c,v,cost,re,units,bc,st)=>{const id=db.prepare('INSERT INTO products(name,category,bottle_ml,cost,reorder_ml) VALUES(?,?,?,?,?)').run(n,c,v,cost,re*v).lastInsertRowid;units.forEach((u,i)=>{const uid=db.prepare('INSERT INTO units(product_id,label,ml,price) VALUES(?,?,?,?)').run(id,u[0],u[1],u[2]).lastInsertRowid;if(i==0){db.prepare('INSERT INTO barcodes VALUES(?,?,1)').run(bc,uid);db.prepare('INSERT INTO barcodes VALUES(?,?,12)').run(bc+'C',uid)}});ledger(id,st*v,'opening','seed',null,o)};
+ P('Johnnie Walker Red','Whisky',750,1500,3,[['Bottle',750,2000],['Quarter',250,750],['Shot',50,150]],'6001001',10);
+ P('Smirnoff Red','Vodka',750,1300,3,[['Bottle',750,1700],['Quarter',250,600],['Shot',50,120]],'6001002',8);
+ P('Hennessy VS','Cognac',700,4800,2,[['Bottle',700,6200],['Shot',50,500]],'6001003',4);
+ P('Chamdor Red Wine','Wine',750,900,4,[['Bottle',750,1400],['Glass',150,350]],'6001004',12);
+ P('Tusker Lager 500ml','Beer',500,190,24,[['Bottle',500,280]],'6001005',48);
+ setSetting('biz','My Wines & Spirits');setSetting('vat','16');setSetting('mpesa_manual','1');
+}
+const addCol=(t,c,d)=>{if(!db.prepare(`PRAGMA table_info(${t})`).all().some(x=>x.name==c))db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${d}`)};
+addCol('users','branch_id','INT DEFAULT 1');addCol('sessions','must_change','INT DEFAULT 0');addCol('sessions','branch_id','INT');addCol('purchase_orders','branch_id','INT');addCol('sales','customer_id','INT');addCol('sales','age_method','TEXT');addCol('orders','token','TEXT');addCol('mpesa_requests','order_id','INT');
+addCol('units','active','INT DEFAULT 1');['left_cash REAL','banked REAL','prev_shift_id INT','prev_left REAL','open_diff REAL','open_note TEXT'].forEach(c=>addCol('shifts',c.split(' ')[0],c.split(' ')[1]));
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_order_token ON orders(token) WHERE token IS NOT NULL');
+// Pricing: base retail price on units; optional wholesale/vip price per unit; time-window % promos (happy hour) apply on top.
+const promoPct=pid=>{const d=new Date(),h=d.getHours(),w=String(d.getDay());return db.prepare('SELECT * FROM promos WHERE active=1 AND (product_id IS NULL OR product_id=?)').all(pid).filter(p=>(p.start_h<=p.end_h?h>=p.start_h&&h<p.end_h:h>=p.start_h||h<p.end_h)&&(!p.days||p.days.split(',').includes(w))).reduce((m,p)=>Math.max(m,p.percent),0)};
+const tierRaw=(uid,t)=>{const r=db.prepare('SELECT price FROM unit_prices WHERE unit_id=? AND tier=?').get(uid,t);return r?r.price:null};
+const effPrice=(u,tier)=>{const b=tier=='retail'?u.price:(tierRaw(u.id,tier)??u.price);return Math.round(b*(1-promoPct(u.product_id)/100))};
+const unitPrices=u=>({prices:{retail:effPrice(u,'retail'),wholesale:effPrice(u,'wholesale'),vip:effPrice(u,'vip')},tiers:{wholesale:tierRaw(u.id,'wholesale'),vip:tierRaw(u.id,'vip')},promo:promoPct(u.product_id)});
+const custBalance=cid=>db.prepare("SELECT COALESCE(SUM(p.amount),0) s FROM payments p JOIN sales s ON s.id=p.sale_id WHERE s.customer_id=? AND p.method='credit' AND s.status='completed'").get(cid).s-db.prepare('SELECT COALESCE(SUM(amount),0) s FROM customer_payments WHERE customer_id=?').get(cid).s-db.prepare("SELECT COALESCE(SUM(r.credit_part),0) s FROM returns r JOIN sales s ON s.id=r.sale_id WHERE s.customer_id=? AND s.status='completed'").get(cid).s;
+// ml held for open (unpaid, undelivered) delivery orders; POS sales and new orders cannot use it
+const reserved=(pid,br,except)=>db.prepare("SELECT COALESCE(SUM(u.ml*i.qty),0) s FROM order_items i JOIN orders o ON o.id=i.order_id JOIN units u ON u.id=i.unit_id WHERE u.product_id=? AND o.branch_id=? AND o.sale_id IS NULL AND o.status IN('new','picking','packed','dispatched') AND o.id!=? AND NOT (o.channel='web' AND o.status='new' AND o.ts<? AND NOT EXISTS(SELECT 1 FROM mpesa_requests m WHERE m.order_id=o.id AND m.status IN('pending','success')))").get(pid,br,except||0,Date.now()-72e5).s;
+module.exports={db,hash,mkUser,setting,setSetting,audit,stock,ledger,effPrice,unitPrices,custBalance,reserved};

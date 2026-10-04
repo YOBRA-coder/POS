@@ -1,0 +1,19 @@
+[Unit]
+Description=CellarPOS
+After=network.target
+
+[Service]
+User=cellarpos
+WorkingDirectory=/opt/cellarpos
+EnvironmentFile=/etc/cellarpos.env
+ExecStart=/usr/bin/env node server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/cellarpos
+
+[Install]
+WantedBy=multi-user.target

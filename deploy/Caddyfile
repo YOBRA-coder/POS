@@ -1,0 +1,22 @@
+# Two sites, one server.
+# 1) Public: only the online shop and the M-Pesa callback are reachable from the internet.
+shop.example.com {
+	@public path /shop /shop.html /api/public/* /api/mpesa/callback/* /uploads/*
+	handle @public {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		respond "Not found" 404
+	}
+}
+
+# 2) Staff POS: only reachable from the shop network / VPN. Replace the ranges with yours.
+pos.example.com {
+	@lan remote_ip 192.168.0.0/16 10.0.0.0/8 100.64.0.0/10
+	handle @lan {
+		reverse_proxy 127.0.0.1:3000
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+}
