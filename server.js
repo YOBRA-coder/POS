@@ -20,7 +20,7 @@ const weakPin=p=>['1234','2222','1111','0000','123456','111111','000000','123456
 const pinRule=(role,p)=>{p=String(p||'');if(!/^\d{4,8}$/.test(p))throw E(400,'PIN must be 4 to 8 digits');if(process.env.NODE_ENV=='production'){if(RANK[role]>=2&&p.length<6)throw E(400,'Managers and owners need a PIN of at least 6 digits');if(weakPin(p))throw E(400,'That PIN is too easy to guess')}};
 const setPin=(id,p)=>{const s=crypto.randomBytes(8).toString('hex');db.prepare('UPDATE users SET pin_hash=?,salt=? WHERE id=?').run(hash(p,s),s,id)};
 const approver=pin=>pin&&db.prepare("SELECT * FROM users WHERE role IN('manager','owner') AND active=1").all().find(u=>eq(hash(pin,u.salt),u.pin_hash));
-const bizInfo=()=>({biz:setting('biz','My Wines & Spirits'),kra:setting('kra',''),vat:+setting('vat',16),age_check:setting('age_check','1'),shop_enabled:setting('shop_enabled','0'),shop_fee:setting('shop_fee','0'),sms_enabled:setting('sms_enabled','0'),footer:setting('receipt_footer',''),mpesa_mode:mpesa.mode(),fiscal:process.env.FISCAL||'mock'});
+const bizInfo=()=>({biz:setting('biz','My Wines & Spirits'),kra:setting('kra',''),vat:+setting('vat',16),age_check:setting('age_check','1'),shop_enabled:setting('shop_enabled','0'),shop_fee:setting('shop_fee','0'),sms_enabled:setting('sms_enabled','0'),footer:setting('receipt_footer',''),mpesa_mode:mpesa.mode(),fiscal:process.env.FISCAL||'mock',shop_url:process.env.PUBLIC_URL?process.env.PUBLIC_URL.replace(/\/$/,'')+'/shop':''});
 /* ---- auth ---- */
 // The staff list is no longer public. Login screens ask for a name (or, if the owner turns it on, show name tiles only).
 app.get('/api/login-options',H(()=>{const list=setting('login_list','0')=='1';return{biz:setting('biz','CellarPOS'),list,users:list?db.prepare('SELECT name FROM users WHERE active=1 ORDER BY name').all().map(u=>u.name):[]}}));
@@ -166,6 +166,7 @@ app.get('/api/health',(q,r)=>r.json({ok:1}));
 app.get('/shop',(q,r)=>r.sendFile(__dirname+'/public/shop.html'));
 require('./extra')(app,{auth,H,E,now,RANK,createSale,getSale,mpesa,onCallback});
 require('./manage')(app,{auth,H,E,now,RANK});
+require('./pro')(app,{auth,H,E,now,RANK});
 app.start=(P=process.env.PORT||3000)=>{if(!process.env.FISCAL)console.warn('WARNING: eTIMS not connected (FISCAL unset). Receipts are not KRA fiscal invoices.');setInterval(()=>db.prepare('DELETE FROM sessions WHERE ts<?').run(now()-24*36e5),36e5);setInterval(()=>fiscal.run(db,getSale).catch(console.error),15000);setTimeout(backupTick,5000);setInterval(()=>require('./lib/sms').run(db).catch(console.error),2e4);setInterval(()=>db.prepare("UPDATE orders SET status='cancelled' WHERE channel='web' AND status='new' AND sale_id IS NULL AND ts<? AND NOT EXISTS(SELECT 1 FROM mpesa_requests m WHERE m.order_id=orders.id AND m.status IN('pending','success'))").run(now()-72e5),9e5);setInterval(backupTick,36e5);return app.listen(P,'0.0.0.0',()=>console.log('CellarPOS on http://localhost:'+P))};
 if(require.main===module)app.start();
 module.exports=app;

@@ -91,3 +91,15 @@ Run behind Caddy/Nginx with HTTPS on your VPS (`pm2 start server.js`). Back up `
 ## Not built yet
 Batch/expiry tracking, per-branch receipt numbering and tax settings, direct label-printer drivers (labels print through the normal browser print dialog), a real eTIMS adapter (needs KRA's certified spec), WhatsApp bot ordering, a driver app or route planning, WhatsApp notifications. The Electron desktop wrapper is written but not built or run on a real machine.
 # POS
+
+
+## Phone app, notifications and owner tools (v10)
+- **Install as an app (PWA):** open the staff site in Chrome on Android → "Install CellarPOS" (a button appears in More and on the sign-in page). The online shop installs separately from `/shop`. **Installing, offline start-up and push notifications need HTTPS** (Caddy in `deploy/` provides it; `localhost` also works). Plain `http://192.168.x.x` will still run as a website but cannot be installed.
+- **Phone layout:** app bar that matches the Android status bar (light/dark), safe-area aware bottom navigation (Home, Sell, Stock, Orders, More for owner/manager; Sell, Orders, Till, More for cashiers), bottom-sheet dialogs, keyboard-aware (bottom bar hides while typing), Android Back button closes sheets and steps back through screens (press twice to exit).
+- **Notifications:** the bell shows new web orders, low/out-of-stock, overdue supplier bills, failed tax documents, long-open shifts and pending transfers. Tap More → Alerts (or My account) → *Turn on notifications*. With HTTPS the server sends real Web Push so alerts arrive when the app is closed (VAPID keys are created automatically; set `VAPID_SUBJECT=mailto:you@domain` if you like). The server must reach the internet to deliver pushes. Signing out removes push from that device.
+- **Updates:** a "New version is ready" bar appears after a deploy; tapping Update reloads (never mid-sale on its own).
+- **Home (owner/manager):** sales, gross and net profit vs yesterday / previous period, live tills, orders, money owed to you and by you, top sellers, busy hours, cashiers, branch comparison (owner).
+- **Expenses:** rent, salaries, power etc. Net profit = gross profit − expenses on Home and Reports. Managers can remove their own entry within an hour; owners any.
+- **Photos:** pick several from the gallery or use the camera (up to 6, shrunk on the phone), tap to view full screen, set the main photo. Stock → "No photo" shows what still needs one.
+- **Online shop:** product photo cards with a swipeable gallery and full-screen zoom, search, categories, cart drawer with thumbnails, remembered customer details, installable, last menu kept offline. Owner can copy/share the shop link in Settings → General (set `PUBLIC_URL` so it shows your public address).
+- New files: `pro.js` (API), `pwa/` (service workers), `public/icons/`. Re-run `npm install` (adds `web-push`).

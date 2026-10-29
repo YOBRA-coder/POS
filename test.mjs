@@ -197,4 +197,18 @@ const lows=rp.low.every(x=>'id' in x&&'reorder_ml' in x);assert.ok(lows,'low-sto
 // login list switch
 await call('/settings',{login_list:'1'});assert.ok((await (await fetch(base+'/login-options')).json()).users.includes('Owner'),'owner can show names');await call('/settings',{login_list:'0'});
 console.log('v9 tests passed');
+// v10: expenses, dashboard, alerts, push key, PWA files, public gallery
+await login(1,'1234');
+const ex=await call('/expenses',{category:'Rent',amount:5000,note:'t'});assert.equal(ex.s,200);
+assert.equal((await call('/expenses',{category:'Rent',amount:-1})).s,400,'bad expense amount');
+let el=(await call('/expenses')).j;assert.equal(el.total,5000);assert.equal(el.by_cat[0].category,'Rent');
+const db1=(await call('/dashboard?from='+(Date.now()-864e5)+'&span=864e5')).j;assert.equal(db1.today.expenses,5000);assert.ok(Array.isArray(db1.branches)&&db1.top&&db1.shifts&&db1.cashiers);
+assert.equal((await call('/expenses/'+ex.j.id,null,'DELETE')).s,200);assert.equal((await call('/expenses')).j.total,0,'voided expense excluded');
+assert.ok(Array.isArray((await call('/alerts')).j));
+const pk=(await call('/push/key')).j;assert.ok(pk.enabled&&pk.key.length>60,'vapid key');
+await login(3,'482915');assert.equal((await call('/dashboard')).s,403,'cashier cannot see dashboard');assert.equal((await call('/expenses',{amount:1})).s,403);assert.ok(Array.isArray((await call('/alerts')).j));
+const mf=await fetch(base.replace('/api','')+'/manifest.webmanifest');assert.equal(mf.status,200);assert.equal((await mf.json()).display,'standalone');
+const swj=await (await fetch(base.replace('/api','')+'/sw.js')).text();assert.ok(!swj.includes('__BUILD__'),'sw build id stamped');
+await login(1,'1234');await call('/settings',{shop_enabled:'1'});const pc=(await (await fetch(base+'/public/catalog')).json());assert.ok(pc.products.every(p=>Array.isArray(p.images)),'public catalogue carries gallery');
+console.log('v10 tests passed');
 console.log('ALL TESTS PASSED');s.close();process.exit(0);

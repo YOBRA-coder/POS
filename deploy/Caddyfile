@@ -1,7 +1,7 @@
 # Two sites, one server.
 # 1) Public: only the online shop and the M-Pesa callback are reachable from the internet.
 shop.example.com {
-	@public path /shop /shop.html /api/public/* /api/mpesa/callback/* /uploads/*
+	@public path /shop /shop.html /shop.webmanifest /shop-sw.js /icons/* /api/public/* /api/mpesa/callback/* /uploads/*
 	handle @public {
 		reverse_proxy 127.0.0.1:3000
 	}
