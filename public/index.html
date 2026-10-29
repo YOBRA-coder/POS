@@ -68,6 +68,7 @@ html,body{height:100%}body{overscroll-behavior-y:contain}
 .strip2{display:flex;gap:8px;overflow-x:auto;margin:8px 0;scrollbar-width:none}.strip2::-webkit-scrollbar{display:none}.strip2 img{width:64px;height:64px;border-radius:10px;object-fit:cover;flex:0 0 auto;cursor:zoom-in;border:1px solid var(--ln)}
 #vw{position:fixed;inset:0;z-index:58;background:#000;color:#fff;display:flex;flex-direction:column}#vw .vt{display:flex;justify-content:space-between;align-items:center;padding:calc(10px + env(safe-area-inset-top,0px)) 12px 10px;background:#000c}#vw .vg{flex:1;min-height:0;display:flex;overflow-x:auto;scroll-snap-type:x mandatory}#vw .vg div{flex:0 0 100%;scroll-snap-align:center;display:flex;align-items:center;justify-content:center}#vw img{max-width:100%;max-height:100%;object-fit:contain}#vw .vd{display:flex;justify-content:center;gap:6px;padding:10px calc(10px + env(safe-area-inset-bottom,0px))}#vw .vd i{width:7px;height:7px;border-radius:50%;background:#fff5}#vw .vd i.on{background:#fff}
 .th.zm{cursor:zoom-in}.sm-badge{font-size:11px}
+.clk{display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 4px}.clk b{font-size:16px}.clk small{font-size:11px;opacity:.75;color:inherit}
 @media(max-width:900px){
  :root{--nav:calc(58px + env(safe-area-inset-bottom,0px))}
  body{font-size:15px}
@@ -157,13 +158,13 @@ const VIEWS=()=>({home:vHome,sell:vSell,stock:vStock,rep:vRep,shift:vShift,more:
 function shell(){const nav=navTabs();if(!nav.some(t=>t[0]==A.tab))A.tab=mgr()?'home':'sell';
  const bn=BN[mgr()?2:1].map(k=>nav.find(t=>t[0]==k)).filter(Boolean),inMore=!bn.some(t=>t[0]==A.tab);
  $('root').innerHTML=`<div class="app"><nav class="rail">${nav.map(t=>`<a class="${A.tab==t[0]?'cur':''}" onclick="go2('${t[0]}')">${t[1]}<small>${t[2]}</small><i class="nb" id="rb-${t[0]}"></i></a>`).join('')}<div class="sp"></div><a onclick="outFn()">🚪<small>Exit</small></a></nav>
- <div class="main"><div class="top"><div class="ttl"><b class="biz">${esc(A.cat.settings.biz)}</b><b class="pg">${tabName(A.tab)}</b></div><span id="hd" class="hd"></span><button class="bell" onclick="alertsM()" aria-label="Notifications">🔔<i id="bc"></i></button></div><div class="strip" id="strip"></div><div class="view" id="v"></div></div>
+ <div class="main"><div class="top"><div class="ttl"><b class="biz">${esc(A.cat.settings.biz)}</b><b class="pg">${tabName(A.tab)}</b></div><span id="hd" class="hd"></span><span class="clk" id="clk" aria-live="off"></span><button class="bell" onclick="alertsM()" aria-label="Notifications">🔔<i id="bc"></i></button></div><div class="strip" id="strip"></div><div class="view" id="v"></div></div>
  <nav class="bnav" id="bn">${bn.map(t=>`<a class="${A.tab==t[0]?'cur':''}" onclick="go2('${t[0]}')"><span class="ni">${t[1]}<i class="nb" id="nb-${t[0]}"></i></span><small>${t[2]}</small></a>`).join('')}<a class="${inMore?'cur':''}" onclick="moreM()"><span class="ni">${inMore?({rep:'📊',cust:'👥',buy:'🧾',exp:'💸',shift:'💵',more:'⚙️'})[A.tab]||'☰':'☰'}<i class="nb" id="nb-more"></i></span><small>${inMore?tabName(A.tab):'More'}</small></a></nav></div><div id="upd"><span>A new version is ready.</span><button onclick="applyUpdate()">Update</button></div>`;hdr();badges();VIEWS()[A.tab]()}
 function go2(t,fromBack){if(!fromBack&&t!=A.tab){A.nav=A.nav||[];A.nav.push(A.tab);if(A.nav.length>20)A.nav.shift()}A.tab=t;SS('lasttab',t);A.onScan=null;shell();try{$('v').scrollTop=0}catch(e){}}
 function pills(){const s=A.cat.settings,lowN=A.cat.products.filter(low).length,outN=A.cat.products.filter(out).length;
  const branch=s.can_switch_branch&&A.cat.branches&&A.cat.branches.length>1?`<select class="brsel" title="Switch branch (close your shift first)" onchange="swBranch(this.value)">${A.cat.branches.map(b=>`<option value="${b.id}" ${b.id==s.branch.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select>`:(s.branch?`<span class="pill" title="${R[A.user.role]<2?'Cashiers work in the branch the owner assigned':'Your branch'}">📍 ${esc(s.branch.name)}${R[A.user.role]<2?' 🔒':''}</span>`:'');
  return `${A.webNew?`<span class="pill bad link" onclick="go2('orders')">${A.webNew} web order(s)</span>`:''}${branch}${lowN&&mgr()?`<span class="pill ${outN?'bad':'warn'} link" onclick="stockAlerts()" title="Stock alerts">⚠ ${outN?outN+' out · ':''}${lowN} low</span>`:''}${A.shift===null&&A.on?`<span class="pill warn link" onclick="go2('shift')">No shift</span>`:A.shift?`<span class="pill ok link" onclick="go2('shift')">Shift open</span>`:''}${s.mpesa_mode&&s.mpesa_mode!='production'?`<span class="pill warn" title="M-Pesa is in ${s.mpesa_mode} mode: no real money moves. Owner: Settings → Payments.">M-Pesa ${s.mpesa_mode=='mock'?'TEST':s.mpesa_mode.toUpperCase()}</span>`:''}<span class="pill ${A.on?'ok':'bad'}">${A.on?'Online':'Offline'}</span>${A.q2.length?`<span class="pill bad">${A.q2.length} queued</span>`:''}`}
-function hdr(){const e=$('hd');if(!e||!A.user||!A.cat)return;const h=pills();e.innerHTML=h+`<small class="who">${esc(A.user.name)} · ${A.user.role}</small>`;const st=$('strip');if(st)st.innerHTML=h;badges()}
+function hdr(){const e=$('hd');if(!e||!A.user||!A.cat)return;const h=pills();e.innerHTML=h+`<small class="who">${esc(A.user.name)} · ${A.user.role}</small>`;const st=$('strip');if(st)st.innerHTML=h;badges();tickClock()}
 async function swBranch(id){try{await api('/session/branch',{b:{branch_id:+id}});await loadCat();await loadShift();A.cart=[];A.cust=null;shell();T('Now working in '+A.cat.settings.branch.name)}catch(e){T(e.message,1);shell()}}
 /* ---------- scanner: keyboard-wedge USB/Bluetooth scanners + camera ---------- */
 let sb='',sl=0,s0=0;
@@ -643,6 +644,9 @@ function shopUrl(){return A.cat.settings.shop_url||location.origin+'/shop'}
 async function shopLink(how){const u=shopUrl();if(how=='share'&&navigator.share){try{await navigator.share({title:A.cat.settings.biz,text:'Order wines & spirits online',url:u})}catch(e){}return}
  try{await navigator.clipboard.writeText(u);T('Shop link copied')}catch(e){prompt('Copy the shop link:',u)}}
 
+/* live clock in the top bar */
+function tickClock(){const e=$('clk');if(!e)return;const d=new Date();e.innerHTML=`<b>${d.toLocaleTimeString('en-KE',{hour:'2-digit',minute:'2-digit'})}</b><small>${d.toLocaleDateString('en-KE',{weekday:'short',day:'numeric',month:'short'})}</small>`}
+setInterval(tickClock,10000);
 /* ---------- lifecycle ---------- */
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&A.user){sync();pollAlerts();if(A.tab=='home')vHome()}});
 addEventListener('pageshow',e=>{if(e.persisted&&A.user)pollAlerts()});
